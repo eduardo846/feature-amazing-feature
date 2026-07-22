@@ -1,0 +1,32 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`RootLayout matches the snapshot (gesture root + stack navigator tree) 1`] = `
+<View
+  style={
+    {
+      "flex": 1,
+    }
+  }
+>
+  <ThemeProvider>
+    <NetworkProvider>
+      <ToastProvider>
+        <Stack>
+          <StackScreen
+            name="index"
+          />
+          <StackScreen
+            name="(auth)"
+          />
+          <StackScreen
+            name="(app)"
+          />
+        </Stack>
+        <StatusBar
+          style="auto"
+        />
+      </ToastProvider>
+    </NetworkProvider>
+  </ThemeProvider>
+</View>
+`;

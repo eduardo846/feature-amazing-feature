@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
+      - name: Lint
+        run: pnpm run lint
+      - name: Build
+        run: pnpm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Clippy
+        run: cd backend && cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cd backend && cargo test
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust & Soroban
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test Contracts
+        run: cd backend && cargo test --all-features
+
+  reproducible-build:
+    name: Verify Reproducible Contract Hashes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build & verify hashes
+        run: ./scripts/verify.sh
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: soroban-contracts-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error

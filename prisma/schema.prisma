@@ -1,0 +1,588 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  verificationTokens VerificationToken[]
+  
+  // Platform specific relations
+  creatorProfile CreatorProfile?
+  clientProfile  ClientProfile?
+  bounties       Bounty[]
+  applications   BountyApplication[]
+  notifications  Notification[]
+  notificationPreference NotificationPreference?
+  inAppNotifications     InAppNotification[]
+  emailDeliveryLogs      EmailDeliveryLog[]
+  emailUnsubscribeToken  String? @unique
+  matchFeedback       MatchFeedback[]
+  matchNotifications  MatchNotification[]
+  auditLogs           AuditLog[]
+
+  @@index([email])
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([identifier, token])
+  @@index([userId])
+}
+
+enum Role {
+  USER
+  CREATOR
+  CLIENT
+  ADMIN
+}
+
+// Platform specific models
+model CreatorProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  bio         String?
+  avatar      String?
+  discipline  String?
+  skills      String[]
+  portfolio   Json?
+  rating      Float    @default(0)
+  completedProjects Int @default(0)
+  verified    Boolean  @default(false)
+  githubUrl   String?
+  figmaUrl    String?
+  linkedinUrl String?
+  websiteUrl  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([discipline])
+}
+
+model ClientProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName String?
+  bio         String?
+  avatar      String?
+  verified    Boolean  @default(false)
+  githubUrl   String?
+  figmaUrl    String?
+  linkedinUrl String?
+  websiteUrl  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Bounty {
+  id          String   @id @default(cuid())
+  creatorId   String
+  creator     User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  title       String
+  description String
+  budget      Int
+  deadline    DateTime
+  status      BountyStatus @default(OPEN)
+  category    String?
+  tags        String[]
+  applications BountyApplication[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([category])
+}
+
+enum BountyStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model BountyApplication {
+  id             String   @id @default(cuid())
+  bountyId       String
+  bounty         Bounty   @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  applicantId    String
+  applicant      User     @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  proposal       String
+  proposedBudget Int
+  timeline       Int      // days
+  status         ApplicationStatus @default(PENDING)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([bountyId, applicantId])
+  @@index([bountyId])
+  @@index([applicantId])
+  @@index([status])
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+model Review {
+  id                String       @id @default(cuid())
+  creatorId         String
+  reviewerId        String
+  reviewerName      String
+  rating            Int          // 1-5
+  title             String
+  body              String       @db.Text
+  isVerifiedPurchase Boolean     @default(false)
+  helpfulCount      Int          @default(0)
+  notHelpfulCount   Int          @default(0)
+  status            ReviewStatus @default(PENDING)
+  nullifier         String?      @unique
+  zkProof           Json?        /// Groth16 proof JSON
+  zkPublicSignals   String[]     /// Public signals from proof
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([creatorId])
+  @@index([reviewerId])
+  @@index([status])
+  @@index([nullifier])
+}
+
+model ReviewVote {
+  id        String @id @default(cuid())
+  reviewId  String
+  userId    String
+  vote      String // "helpful" | "not_helpful"
+
+  @@unique([reviewId, userId])
+  @@index([reviewId])
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  messageId   String?            @unique
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  type        String
+  status      NotificationStatus @default(PENDING)
+  priority    String             @default("normal")
+  channels    String[]
+  metadata    Json?
+  readAt      DateTime?
+  openedAt    DateTime?
+  sentAt      DateTime?
+  failedAt    DateTime?
+  error       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  OPENED
+  READ
+  ARCHIVED
+  DELETED
+}
+// ── Notifications & email delivery ───────────────────────────────────────────
+
+model NotificationPreference {
+  userId                  String   @id
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailBountyAlerts       Boolean  @default(true)
+  emailApplicationUpdates Boolean  @default(true)
+  emailMessages           Boolean  @default(true)
+  emailMarketing          Boolean  @default(false)
+  inAppEnabled            Boolean  @default(true)
+  updatedAt               DateTime @updatedAt
+}
+
+model InAppNotification {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  body          String   @db.Text
+  read          Boolean  @default(false)
+  applicationId String?
+  bountyId      String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model EmailDeliveryLog {
+  id                String              @id @default(cuid())
+  userId            String?
+  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  toEmail           String
+  templateKey       String
+  subject           String
+  category          String
+  status            EmailDeliveryStatus @default(QUEUED)
+  provider          String?
+  providerMessageId String?
+  errorMessage      String?             @db.Text
+  payload           Json
+  createdAt         DateTime            @default(now())
+  sentAt            DateTime?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum EmailDeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model MatchFeedback {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy  String
+  mode      String
+  contextId String?
+  matchId   String
+  score     Float?
+  helpful   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([strategy, helpful])
+}
+
+model MatchNotification {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  body            String   @db.Text
+  read            Boolean  @default(false)
+  relatedBountyId String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ── Escrow Deadlock Prevention ───────────────────────────────────────────
+
+model Escrow {
+  id                String   @id @default(cuid())
+  bountyId          String   @default("")
+  creatorId         String
+  clientId          String
+  freelancerUserId  String?
+  amount            Int
+  currency          String   @default("usd")
+  platformFeeCents  Int      @default(0)
+  paymentIntentId   String?
+  receiptUrl        String?
+  failureMessage    String?
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  releasedAt        DateTime?
+  refundedAt        DateTime?
+  disputedAt        DateTime?
+  disputeReason     String?
+  version           Int      @default(1)
+
+  @@index([creatorId])
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([creatorId, status])
+  @@index([clientId, status])
+  @@index([bountyId])
+  @@index([paymentIntentId])
+}
+
+model Balance {
+  id        String   @id @default(cuid())
+  userId    String
+  available Int      @default(0)
+  locked    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  escrowId  String?
+  type      String
+  amount    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([escrowId])
+  @@index([type])
+}
+
+model Dispute {
+  id        String   @id @default(cuid())
+  escrowId  String
+  creatorId String
+  clientId  String
+  status    String   @default("open")
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([escrowId])
+  @@index([creatorId])
+  @@index([clientId])
+  @@index([status])
+}
+
+// ── Audit Logging & Telemetry ────────────────────────────────────────────
+
+/// Immutable audit trail for all mutating operations.
+/// Records who did what, when, and from where — used for security tracing and compliance.
+model AuditLog {
+  id            String    @id @default(cuid())
+
+  /// The authenticated user that triggered the mutation (null for unauthenticated attempts).
+  userId        String?
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// High-level category: e.g. "bounty", "application", "escrow", "profile"
+  resource      String
+
+  /// The specific action performed: e.g. "create", "update", "delete", "accept"
+  action        String
+
+  /// Primary key of the affected record (if applicable).
+  resourceId    String?
+
+  /// Sanitised snapshot of the mutation payload (no secrets, no PII beyond IDs).
+  payload       Json?
+
+  /// HTTP method of the originating request.
+  httpMethod    String?
+
+  /// Request path / route that triggered the mutation.
+  requestPath   String?
+
+  /// Outcome of the operation.
+  status        AuditStatus @default(SUCCESS)
+
+  /// Optional error message captured on failure.
+  errorMessage  String?     @db.Text
+
+  /// W3C Trace-Context traceId for distributed tracing correlation.
+  traceId       String?
+
+  /// Hashed source IP — stored as a one-way hash to avoid storing raw PII.
+  ipHash        String?
+
+  /// Raw User-Agent header (no PII, useful for bot/abuse detection).
+  userAgent     String?
+
+  /// ISO-3166-1 country code inferred from IP geo-lookup (optional).
+  geoCountry    String?
+
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, action])
+  @@index([resourceId])
+  @@index([traceId])
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+enum AuditStatus {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+// ── Messaging ────────────────────────────────────────────────────────────
+
+/// Archived messages — moved from Redis after TTL expiry via background job.
+model Message {
+  id            String   @id
+  threadId      String
+  senderId      String
+  recipientId   String
+  ciphertext    String
+  iv            String
+  createdAt     DateTime
+  attachment    Json?    /// { name, type, size, data (base64) }
+  status        String   @default("sent")   /// sent | delivered | read
+  readBy        String[] @default([])
+  metadata      Json?
+
+  /// Cursor for archive chronological ordering
+  archivedAt    DateTime @default(now())
+  expiresAt     DateTime /// when the Redis copy expired
+
+  @@index([threadId, createdAt])
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([expiresAt])
+}
+
+// ── Soroban Sequence Management ──────────────────────────────────────────
+
+model SequenceLock {
+  accountId  String   @id
+  lockedBy   String   @default("")
+  lockedAt   DateTime @default(now())
+  expiresAt  DateTime
+  sequence   BigInt   @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+model TransactionQueue {
+  id          String   @id @default(cuid())
+  accountId   String
+  contractId  String
+  method      String
+  args        Json
+  status      String   @default("pending")
+  sequence    BigInt?
+  txHash      String?
+  error       String?
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  createdAt   DateTime @default(now())
+  submittedAt DateTime?
+  confirmedAt DateTime?
+  updatedAt   DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([accountId, status])
+}
+
+model SorobanTransaction {
+  id        String   @id @default(cuid())
+  accountId String
+  contractId String
+  method    String
+  sequence  BigInt
+  txHash    String   @unique
+  status    String   @default("pending")
+  gasUsed   BigInt?
+  result    Json?
+  error     String?
+  submittedAt DateTime
+  confirmedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([txHash])
+  @@index([status])
+  @@unique([accountId, sequence])
+}
+
+// ── Centralized Error Reporting ────────────────────────────────────────────
+model ErrorLog {
+  id          String   @id
+  timestamp   DateTime
+  level       String
+  message     String
+  stack       String?
+  context     Json
+  url          String?
+  userAgent   String?
+  environment String
+
+  createdAt   DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([level])
+  @@index([environment])
+}
+
